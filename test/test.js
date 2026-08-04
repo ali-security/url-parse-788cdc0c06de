@@ -31,6 +31,14 @@ describe('url-parse', function () {
 
   describe('extractProtocol', function () {
     it('extracts the protocol data', function () {
+      assume(parse.extractProtocol('http://example.com')).eql({
+        slashes: true,
+        protocol: 'http:',
+        rest: 'example.com'
+      });
+    });
+
+    it('extracts the protocol data for nothing', function () {
       assume(parse.extractProtocol('')).eql({
         slashes: false,
         protocol: '',
@@ -45,6 +53,14 @@ describe('url-parse', function () {
         slashes: false,
         protocol: '',
         rest: input
+      });
+    });
+
+    it('trimsLeft', function () {
+      assume(parse.extractProtocol(' javascript://foo')).eql({
+        slashes: true,
+        protocol: 'javascript:',
+        rest: 'foo'
       });
     });
   });
