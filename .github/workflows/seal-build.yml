@@ -1,0 +1,51 @@
+name: seal-build
+
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "9"
+      - name: Pin npm registry to the release date
+        run: |
+          npm config set registry https://time-machines-npm.sealsecurity.io/
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken 2018-04-19T14:02:58.027000Z
+      - name: Install
+        run: npm install
+      - name: Build dist bundle
+        run: |
+          npm run browserify
+          npm run minify
+      - name: Test
+        run: npm test
+      - name: Pack
+        run: npm pack
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: url-parse-1.4.0.tgz
+          if-no-files-found: error
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["4", "6", "8"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Pin npm registry to the release date
+        run: |
+          npm config set registry https://time-machines-npm.sealsecurity.io/
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken 2018-04-19T14:02:58.027000Z
+      - name: Install
+        run: npm install
+      - name: Test
+        run: npm test
