@@ -165,9 +165,10 @@ describe('url-parse', function () {
       , parsed = parse(url);
 
     assume(parsed.port).equals('');
+    assume(parsed.pathname).equals('/');
     assume(parsed.host).equals('example.com');
     assume(parsed.hostname).equals('example.com');
-    assume(parsed.href).equals('http://example.com');
+    assume(parsed.href).equals('http://example.com/');
   });
 
   it('understands an / as pathname', function () {
@@ -217,7 +218,7 @@ describe('url-parse', function () {
     assume(parsed.hostname).equals('google.com');
     assume(parsed.hash).equals('#what\\is going on');
 
-    parsed = parse('//\\what-is-up.com');
+    parsed = parse('http://yolo.com\\what-is-up.com');
     assume(parsed.pathname).equals('/what-is-up.com');
   });
 
@@ -225,8 +226,54 @@ describe('url-parse', function () {
     var url = '////what-is-up.com'
       , parsed = parse(url);
 
-    assume(parsed.host).equals('');
-    assume(parsed.hostname).equals('');
+    assume(parsed.host).equals('what-is-up.com');
+    assume(parsed.href).equals('//what-is-up.com/');
+  });
+
+  it('does not see a slash after the protocol as path', function () {
+    var url = 'https:\\/github.com/foo/bar'
+      , parsed = parse(url);
+
+    assume(parsed.host).equals('github.com');
+    assume(parsed.hostname).equals('github.com');
+    assume(parsed.pathname).equals('/foo/bar');
+
+    url = 'https:/\/\/\github.com/foo/bar';
+    assume(parsed.host).equals('github.com');
+    assume(parsed.hostname).equals('github.com');
+    assume(parsed.pathname).equals('/foo/bar');
+  });
+
+  it('treats any combination of 2 or more slashes as an authority', function () {
+    var i = 0
+      , parsed
+      , vectors = [
+          ['http:\\/\\/attacker.com', 'http:', 'attacker.com', '/', 'http://attacker.com/'],
+          ['https:\\\\attacker.com/foo', 'https:', 'attacker.com', '/foo', 'https://attacker.com/foo'],
+          ['https:/\\attacker.com/foo', 'https:', 'attacker.com', '/foo', 'https://attacker.com/foo'],
+          ['\\\\attacker.com', '', 'attacker.com', '/', '//attacker.com/'],
+          ['/\\attacker.com', '', 'attacker.com', '/', '//attacker.com/']
+        ];
+
+    for (; i < vectors.length; i++) {
+      parsed = parse(vectors[i][0]);
+
+      assume(parsed.slashes).equals(true);
+      assume(parsed.protocol).equals(vectors[i][1]);
+      assume(parsed.hostname).equals(vectors[i][2]);
+      assume(parsed.pathname).equals(vectors[i][3]);
+      assume(parsed.href).equals(vectors[i][4]);
+    }
+  });
+
+  it('does not inherit the base hostname for backslash obfuscated urls', function () {
+    var base = parse('http://trusted.com/path')
+      , parsed = parse('http:\\/\\/attacker.com', base);
+
+    assume(parsed.host).equals('attacker.com');
+    assume(parsed.hostname).equals('attacker.com');
+    assume(parsed.pathname).equals('/');
+    assume(parsed.href).equals('http://attacker.com/');
   });
 
   it('handles the case where the port is specified but empty', function () {
@@ -236,9 +283,9 @@ describe('url-parse', function () {
     assume(parsed.port).equals('');
     assume(parsed.host).equals('example.com');
     assume(parsed.hostname).equals('example.com');
-    assume(parsed.pathname).equals('');
+    assume(parsed.pathname).equals('/');
     assume(parsed.origin).equals('http://example.com');
-    assume(parsed.href).equals('http://example.com');
+    assume(parsed.href).equals('http://example.com/');
 
     parsed = parse('http://example.com::');
 
@@ -246,9 +293,9 @@ describe('url-parse', function () {
     assume(parsed.port).equals('');
     assume(parsed.host).equals('example.com:');
     assume(parsed.hostname).equals('example.com:');
-    assume(parsed.pathname).equals('');
+    assume(parsed.pathname).equals('/');
     assume(parsed.origin).equals('http://example.com:');
-    assume(parsed.href).equals('http://example.com::');
+    assume(parsed.href).equals('http://example.com::/');
   });
 
   describe('origin', function () {
@@ -324,32 +371,52 @@ describe('url-parse', function () {
     it('extracts the right protocol from a url', function () {
       var testData = [
         {
-          href: 'http://example.com',
+          href: 'http://example.com/',
           protocol: 'http:',
-          pathname: ''
+          pathname: '/',
+          slashes: true
+        },
+        {
+          href: 'ws://example.com/',
+          protocol: 'ws:',
+          pathname: '/',
+          slashes: true
+        },
+        {
+          href: 'wss://example.com/',
+          protocol: 'wss:',
+          pathname: '/',
+          slashes: true
         },
         {
           href: 'mailto:test@example.com',
           pathname: 'test@example.com',
-          protocol: 'mailto:'
+          protocol: 'mailto:',
+          slashes: false
         },
         {
           href: 'data:text/html,%3Ch1%3EHello%2C%20World!%3C%2Fh1%3E',
           pathname: 'text/html,%3Ch1%3EHello%2C%20World!%3C%2Fh1%3E',
-          protocol: 'data:'
+          protocol: 'data:',
+          slashes: false
         },
         {
           href: 'sip:alice@atlanta.com',
           pathname: 'alice@atlanta.com',
-          protocol: 'sip:'
+          protocol: 'sip:',
+          slashes: false
         }
       ];
 
-      var data;
+      var data, test;
       for (var i = 0, len = testData.length; i < len; ++i) {
-        data = parse(testData[i].href);
-        assume(data.protocol).equals(testData[i].protocol);
-        assume(data.pathname).equals(testData[i].pathname);
+        test = testData[i];
+        data = parse(test.href);
+
+        assume(data.protocol).equals(test.protocol);
+        assume(data.pathname).equals(test.pathname);
+        assume(data.slashes).equals(test.slashes);
+        assume(data.href).equals(test.href);
       }
     });
 
@@ -388,13 +455,14 @@ describe('url-parse', function () {
     });
 
     it('parses ipv6 with auth', function () {
-      var url = 'http://user:password@[3ffe:2a00:100:7031::1]:8080'
+      var url = 'http://user:password@[3ffe:2a00:100:7031::1]:8080/'
         , parsed = parse(url);
 
       assume(parsed.username).equals('user');
       assume(parsed.password).equals('password');
       assume(parsed.host).equals('[3ffe:2a00:100:7031::1]:8080');
       assume(parsed.hostname).equals('[3ffe:2a00:100:7031::1]');
+      assume(parsed.pathname).equals('/');
       assume(parsed.href).equals(url);
     });
 
@@ -512,7 +580,7 @@ describe('url-parse', function () {
 
       assume(data.port).equals('');
       assume(data.host).equals('localhost');
-      assume(data.href).equals('http://localhost');
+      assume(data.href).equals('http://localhost/');
     });
 
     it('inherits port numbers for relative urls', function () {
@@ -561,7 +629,8 @@ describe('url-parse', function () {
     });
 
     it('inherits protocol for relative protocols', function () {
-      var data = parse('//foo.com/foo', parse('http://sub.example.com:808/'));
+      var lolcation = parse('http://sub.example.com:808/')
+        , data = parse('//foo.com/foo', lolcation);
 
       assume(data.port).equals('');
       assume(data.host).equals('foo.com');
@@ -574,13 +643,13 @@ describe('url-parse', function () {
 
       assume(data.port).equals('');
       assume(data.host).equals('localhost');
-      assume(data.href).equals('http://localhost');
+      assume(data.href).equals('http://localhost/');
     });
 
     it('resolves pathname for relative urls', function () {
       var data, i = 0;
       var tests = [
-        ['', 'http://foo.com', ''],
+        ['', 'http://foo.com', '/'],
         ['', 'http://foo.com/', '/'],
         ['a', 'http://foo.com', '/a'],
         ['a/', 'http://foo.com', '/a/'],
@@ -766,12 +835,12 @@ describe('url-parse', function () {
       data.set('hash', 'usage');
 
       assume(data.hash).equals('#usage');
-      assume(data.href).equals('http://example.com#usage');
+      assume(data.href).equals('http://example.com/#usage');
 
       data.set('hash', '#license');
 
       assume(data.hash).equals('#license');
-      assume(data.href).equals('http://example.com#license');
+      assume(data.href).equals('http://example.com/#license');
     });
 
     it('updates the port when updating host', function () {
