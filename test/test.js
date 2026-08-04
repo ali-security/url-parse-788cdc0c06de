@@ -29,6 +29,18 @@ describe('url-parse', function () {
     assume(url.hostname).to.be.a('string');
   });
 
+  describe('trimLeft', function () {
+    it('removes control characters on the left', function () {
+      var i = 0;
+      var prefix = ''
+
+      for (; i < 33; i++) {
+        prefix = String.fromCharCode(i);
+        assume(parse.trimLeft(prefix + prefix +'lol')).equals('lol');
+      }
+    });
+  });
+
   describe('extractProtocol', function () {
     it('extracts the protocol data', function () {
       assume(parse.extractProtocol('http://example.com')).eql({
